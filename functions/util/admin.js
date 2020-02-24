@@ -3,7 +3,8 @@ const serviceAccount = require("../../../serviceAccountKey.json")
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: "https://friend-ify.firebaseio.com"
+    databaseURL: "https://friend-ify.firebaseio.com",
+    storageBucket: "friend-ify.appspot.com"
 })
 
 const db = admin.firestore()
