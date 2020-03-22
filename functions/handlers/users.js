@@ -158,6 +158,39 @@ exports.addUserDetails = (req, res) => {
 		});
 };
 
+exports.getUserDetails = (req, res) => {
+	let userData = {};
+	db.doc(`/users/${req.params.handle}`)
+		.get()
+		.then(doc => {
+			if (doc.exists) {
+				userData.user = doc.data();
+				return db
+					.collection("screams")
+					.where("userHandle", "==", req.params.handle)
+					.orderBy("createdAt", "desc")
+					.get();
+			} else {
+				return res.status(404).json({ error: "User not found" });
+			}
+		})
+		.then(queryDoc => {
+			userData.screams = [];
+			queryDoc.forEach(doc => {
+				let docData = doc.data();
+				userData.screams.push({
+					...docData,
+					screamId: doc.id
+				});
+			});
+			return res.json(userData);
+		})
+		.catch(err => {
+			console.error(err);
+			res.status(500).json({ error: err.code });
+		});
+};
+
 exports.getAuthenticatedUser = (req, res) => {
 	let userData = {};
 	db.doc(`/users/${req.user.handle}`)
@@ -176,10 +209,43 @@ exports.getAuthenticatedUser = (req, res) => {
 			data.forEach(doc => {
 				userData.likes.push(doc.data());
 			});
+			return db
+				.collection("notifications")
+				.where("recipient", "==", req.user.handle)
+				.orderBy("createdAt", "desc")
+				.limit(10)
+				.get();
+		})
+		.then(data => {
+			userData.notifications = [];
+			data.forEach(doc => {
+				let docData = doc.data();
+				userData.notifications.push({
+					...docData,
+					notificationId: doc.id
+				});
+			});
 			return res.json(userData);
 		})
 		.catch(err => {
 			console.error(err);
 			return res.status(500).json({ error: err.code });
+		});
+};
+
+exports.markNotificationsRead = (req, res) => {
+	let batch = db.batch();
+	req.body.forEach(notificationId => {
+		const notification = db.doc(`/notifications/${notificationId}`);
+		batch.update(notification, { read: true });
+	});
+	batch
+		.commit()
+		.then(() => {
+			return res.json({ message: "Notifications marked read" });
+		})
+		.catch(err => {
+			console.error(err);
+			res.status(500).json({ error: err.code });
 		});
 };
