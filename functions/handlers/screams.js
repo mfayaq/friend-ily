@@ -23,7 +23,7 @@ exports.postOneScream = (req, res) => {
 	const newScream = {
 		body: req.body.body,
 		userHandle: req.user.handle,
-		userImage: req.user.image,
+		imageUrl: req.user.image,
 		createdAt: new Date().toISOString(),
 		likeCount: 0,
 		commentCount: 0
@@ -77,7 +77,7 @@ exports.commentOnScream = (req, res) => {
 		body: req.body.body,
 		createdAt: new Date().toISOString(),
 		userHandle: req.user.handle,
-		userImage: req.user.image
+		imageUrl: req.user.image
 	};
 	db.doc(`/screams/${req.params.screamId}`)
 		.get()
