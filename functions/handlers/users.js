@@ -2,13 +2,14 @@ const { db, admin } = require("../util/admin");
 
 const firebaseConfig = require("../util/config");
 const firebase = require("firebase");
+const request = require("request");
 
 firebase.initializeApp(firebaseConfig);
 
 const {
 	validateSignUp,
 	validateLogin,
-	reduceUserDetails
+	reduceUserDetails,
 } = require("../util/validators");
 
 //Sign Up Route
@@ -18,7 +19,7 @@ exports.signup = (req, res) => {
 		email,
 		password,
 		confirmPassword,
-		handle
+		handle,
 	};
 
 	const { valid, errors } = validateSignUp(newUser);
@@ -31,7 +32,7 @@ exports.signup = (req, res) => {
 	let userId, token;
 	db.doc(`/users/${newUser.handle}`)
 		.get()
-		.then(doc => {
+		.then((doc) => {
 			if (doc.exists) {
 				return res.status(400).json({ handle: "this handle is already taken" });
 			} else {
@@ -40,23 +41,23 @@ exports.signup = (req, res) => {
 					.createUserWithEmailAndPassword(newUser.email, newUser.password);
 			}
 		})
-		.then(data => {
+		.then((data) => {
 			userId = data.user.uid;
 			return data.user.getIdToken();
 		})
-		.then(idToken => {
+		.then((idToken) => {
 			token = idToken;
 			const userCredentials = {
 				handle: newUser.handle,
 				email: newUser.email,
 				createdAt: new Date().toISOString(),
 				imageUrl: `https://firebasestorage.googleapis.com/v0/b/${firebaseConfig.storageBucket}/o/${noImg}?alt=media`,
-				userId
+				userId,
 			};
 			db.doc(`/users/${newUser.handle}`).set(userCredentials);
 		})
 		.then(() => res.status(201).json({ token }))
-		.catch(err => {
+		.catch((err) => {
 			console.log(err);
 			if (err.code === "auth/email-already-in-use") {
 				return res.status(400).json({ email: "Email is already in use" });
@@ -73,32 +74,69 @@ exports.login = (req, res) => {
 	const { email, password } = req.body;
 	const user = {
 		email,
-		password
+		password,
 	};
 
 	const { valid, errors } = validateLogin(user);
+	let farFuture = new Date(new Date().getTime() + 1000 * 60 * 60 * 24 * 365);
 
 	if (!valid) return res.status(400).json(errors);
 
 	firebase
 		.auth()
 		.signInWithEmailAndPassword(user.email, user.password)
-		.then(data => {
+		.then((data) => {
+			res.cookie("refresh_token", data.user.refreshToken, {
+				expires: farFuture,
+				httpOnly: true,
+			});
 			return data.user.getIdToken();
 		})
-		.then(token => {
-			return res.json({ token });
+		.then((access_token) => {
+			return res.json({ access_token });
 		})
-		.catch(err => {
+		.catch((err) => {
 			console.log(err);
 			//auth/wrong-password
 			//auth/user-not-found
 			if (err.code === "auth/wrong-password") {
 				return res
 					.status(403)
-					.json({ general: "Wrong credentials, please try again" });
+					.json({ password: "Wrong credentials, please try again" });
+			} else if (err.code === "auth/user-not-found") {
+				return res.status(403).json({ email: "User doesn't exist" });
 			} else return res.status(500).json({ error: err.code });
 		});
+};
+
+exports.getToken = (req, res) => {
+	const { refresh_token } = req.cookies;
+
+	if (!refresh_token) {
+		res.status(400).json({ error: "Token Expired" });
+	}
+
+	let data = {
+		grant_type: "refresh_token",
+		refresh_token,
+	};
+
+	let options = {
+		method: "POST",
+		url: `https://securetoken.googleapis.com/v1/token?key=${firebaseConfig.apiKey}`,
+		headers: {
+			"Content-Type": "application/x-www-form-urlencoded",
+		},
+		form: {
+			...data,
+		},
+	};
+
+	request(options, (error, response) => {
+		if (error) res.json({ error: error.code });
+		let { access_token } = JSON.parse(response.body);
+		res.send({ access_token });
+	});
 };
 
 //Upload Image Route
@@ -129,9 +167,9 @@ exports.uploadImage = (req, res) => {
 				resumable: false,
 				metadata: {
 					metadata: {
-						contentType: imageToBeUploaded.mimetype
-					}
-				}
+						contentType: imageToBeUploaded.mimetype,
+					},
+				},
 			})
 			.then(() => {
 				const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${firebaseConfig.storageBucket}/o/${imageName}?alt=media`;
@@ -140,7 +178,7 @@ exports.uploadImage = (req, res) => {
 			.then(() => {
 				return res.json({ message: "Image Uploaded successfully" });
 			})
-			.catch(err => {
+			.catch((err) => {
 				console.error(err);
 				return res.status(500).json({ error: err.code });
 			});
@@ -156,7 +194,7 @@ exports.addUserDetails = (req, res) => {
 		.then(() => {
 			res.json({ message: "User Details updated successfully" });
 		})
-		.catch(err => {
+		.catch((err) => {
 			console.log(err);
 			res.status(400).json({ error: err.code });
 		});
@@ -166,7 +204,7 @@ exports.getUserDetails = (req, res) => {
 	let userData = {};
 	db.doc(`/users/${req.params.handle}`)
 		.get()
-		.then(doc => {
+		.then((doc) => {
 			if (doc.exists) {
 				userData.user = doc.data();
 				return db
@@ -178,18 +216,18 @@ exports.getUserDetails = (req, res) => {
 				return res.status(404).json({ error: "User not found" });
 			}
 		})
-		.then(queryDoc => {
+		.then((queryDoc) => {
 			userData.screams = [];
-			queryDoc.forEach(doc => {
+			queryDoc.forEach((doc) => {
 				let docData = doc.data();
 				userData.screams.push({
 					...docData,
-					screamId: doc.id
+					screamId: doc.id,
 				});
 			});
 			return res.json(userData);
 		})
-		.catch(err => {
+		.catch((err) => {
 			console.error(err);
 			res.status(500).json({ error: err.code });
 		});
@@ -199,7 +237,7 @@ exports.getAuthenticatedUser = (req, res) => {
 	let userData = {};
 	db.doc(`/users/${req.user.handle}`)
 		.get()
-		.then(doc => {
+		.then((doc) => {
 			if (doc.exists) {
 				userData.credentials = doc.data();
 				return db
@@ -208,9 +246,9 @@ exports.getAuthenticatedUser = (req, res) => {
 					.get();
 			}
 		})
-		.then(data => {
+		.then((data) => {
 			userData.likes = [];
-			data.forEach(doc => {
+			data.forEach((doc) => {
 				userData.likes.push(doc.data());
 			});
 			return db
@@ -220,18 +258,18 @@ exports.getAuthenticatedUser = (req, res) => {
 				.limit(10)
 				.get();
 		})
-		.then(data => {
+		.then((data) => {
 			userData.notifications = [];
-			data.forEach(doc => {
+			data.forEach((doc) => {
 				let docData = doc.data();
 				userData.notifications.push({
 					...docData,
-					notificationId: doc.id
+					notificationId: doc.id,
 				});
 			});
 			return res.json(userData);
 		})
-		.catch(err => {
+		.catch((err) => {
 			console.error(err);
 			return res.status(500).json({ error: err.code });
 		});
@@ -239,7 +277,7 @@ exports.getAuthenticatedUser = (req, res) => {
 
 exports.markNotificationsRead = (req, res) => {
 	let batch = db.batch();
-	req.body.forEach(notificationId => {
+	req.body.forEach((notificationId) => {
 		const notification = db.doc(`/notifications/${notificationId}`);
 		batch.update(notification, { read: true });
 	});
@@ -248,7 +286,7 @@ exports.markNotificationsRead = (req, res) => {
 		.then(() => {
 			return res.json({ message: "Notifications marked read" });
 		})
-		.catch(err => {
+		.catch((err) => {
 			console.error(err);
 			res.status(500).json({ error: err.code });
 		});

@@ -1,11 +1,7 @@
 const admin = require("firebase-admin");
-const serviceAccount = require("../../../serviceAccountKey.json");
+// const serviceAccount = require("../../../serviceAccountKey.json");
 
-admin.initializeApp({
-	credential: admin.credential.cert(serviceAccount),
-	databaseURL: "https://friend-ify.firebaseio.com",
-	storageBucket: "friend-ify.appspot.com"
-});
+admin.initializeApp();
 
 const db = admin.firestore();
 
